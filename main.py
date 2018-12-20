@@ -2,6 +2,8 @@ import torch
 from angles_dataset import *
 from torch import nn, optim
 from logger import Logger
+import time
+from torch.autograd import Variable
 
 N = 4
 net = nn.Sequential(
@@ -30,7 +32,7 @@ def train():
         loss.backward()
         optimizer.step()
         geoLoss = axisAngleGeodesicLoss(data.cpu().numpy(), pred.cpu().detach().numpy())
-        info = {'l2Loss': loss, 'geodesicLoss': geoLoss}
+        info = {'l2Loss': loss.item(), 'geodesicLoss': geoLoss}
         for tag, value in info.items():
             logger.scalar_summary(tag, value, step+1)
 
