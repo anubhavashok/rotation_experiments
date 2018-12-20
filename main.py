@@ -5,7 +5,10 @@ from logger import Logger
 import time
 from torch.autograd import Variable
 
-N = 4
+mode = "E"
+batch_size = 64
+
+N = {"Q":4, "AA":4, "E": 3, "M":9}[mode]
 net = nn.Sequential(
         nn.Linear(N, 128),
         nn.LeakyReLU(),
@@ -19,19 +22,24 @@ net = nn.Sequential(
         )
 
 
-dataset = torch.utils.data.DataLoader(AxisAngleDataset(), batch_size=64, shuffle=False)
+dataset = torch.utils.data.DataLoader(AxisAngleDataset(mode), batch_size=batch_size, shuffle=False)
 logger = Logger('./logs/'+str(time.time())+'/')
 l2Loss = nn.MSELoss()
 
 def train():
     optimizer = optim.Adam(net.parameters(), lr=1e-5)
     for step, (data) in enumerate(dataset):
+        #if step == int(10000.0/batch_size):
+        #    for param_group in optimizer.param_groups:
+        #        param_group['lr'] = 1e-6
         pred = net(Variable(data))
         loss = l2Loss(pred, Variable(data).detach())
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        geoLoss = axisAngleGeodesicLoss(data.cpu().numpy(), pred.cpu().detach().numpy())
+        d = data.cpu().numpy()
+        p = pred.cpu().detach().numpy()
+        geoLoss = geodesicLoss(d, p, mode)
         info = {'l2Loss': loss.item(), 'geodesicLoss': geoLoss}
         for tag, value in info.items():
             logger.scalar_summary(tag, value, step+1)
