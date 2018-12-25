@@ -5,10 +5,12 @@ from logger import Logger
 import time
 from torch.autograd import Variable
 
-mode = "E"
+mode = "M"
 batch_size = 64
 
-N = {"Q":4, "AA":4, "E": 3, "M":9}[mode]
+N = {"Q":4, "AA":4, "E": 3, "M":9, "O":6}[mode]
+name = {"Q":"quaternion", "AA":"axis-angle", "E":"euler", "M":"3x3 matrix", "O":"6D representation"}
+
 net = nn.Sequential(
         nn.Linear(N, 128),
         nn.LeakyReLU(),
@@ -23,7 +25,8 @@ net = nn.Sequential(
 
 
 dataset = torch.utils.data.DataLoader(AxisAngleDataset(mode), batch_size=batch_size, shuffle=False)
-logger = Logger('./logs/'+str(time.time())+'/')
+logger = Logger('./logs/'+name[mode]+"/")
+#+str(time.time())+'/')
 l2Loss = nn.MSELoss()
 
 def train():

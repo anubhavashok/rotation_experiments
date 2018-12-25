@@ -35,6 +35,8 @@ class AxisAngleDataset(Dataset):
             rep = mat_to_quat(aa_to_mat(aa)).tolist()
         elif self.mode == "E":
             rep = mat_to_euler(aa_to_mat(aa)).tolist()
+        elif self.mode == "O":
+            rep = mat_to_orth(aa_to_mat(aa)).flatten().tolist()
         return torch.FloatTensor(rep) 
 
     def __len__(self):
@@ -121,11 +123,31 @@ def quat_to_mat(q):
                 [ xY+wZ, 1.0-(xX+zZ), yZ-wX ],
                 [ xZ-wY, yZ+wX, 1.0-(xX+yY) ]])
 
+def normalize(M):
+    M[:, 0] /= np.linalg.norm(M[:, 0])
+    M[:, 1] /= np.linalg.norm(M[:, 1])
+    M[:, 2] /= np.linalg.norm(M[:, 2])
+    return M
+
+def orthogonalize(M):
+    u, d, vt = np.linalg.svd(M)
+    M = np.dot(u, vt)
+    if np.linalg.det(M) < 0:
+        u[:, -1] = -u[:, -1]
+        M = np.dot(u, vt)
+    return M
 
 def mat_to_aa(M):
-    M = np.asarray(M, dtype=np.float)
+    M = M.reshape(3, 3)
+    M = normalize(M)
+    M = orthogonalize(M)
+    #M = np.asarray(M, dtype=np.float)
     L, W = np.linalg.eig(M.T)
-    i = np.where(np.abs(L - 1.0) < 1e-10)[0]
+    i = np.where(np.abs(L - 1.0) < 1e-5)[0]
+    if not len(i):
+        #return None
+        print(L)
+        raise ValueError("no unit eigenvector corresponding to eigenvalue 1")
     direction = np.real(W[:, i[-1]]).squeeze()
     cosa = (np.trace(M) - 1.0) / 2.0
     if abs(direction[2]) > 1e-8:
@@ -141,10 +163,43 @@ def mat_to_aa(M):
 def quat_to_aa(q):
     return mat_to_aa(quat_to_mat(q))
 
-
 def euler_to_aa(e):
     return mat_to_aa(euler_to_mat(e))
 
+def orth_to_aa(o):
+    return mat_to_aa(orth_to_mat(o))
+
+def mat_to_orth(M):
+    Q, R = np.linalg.qr(M)
+    return Q[:, :-1]
+
+def orth_to_mat(M):
+    M = M.reshape(3, 2)
+    assert(M.shape[0] == M.shape[1] + 1)
+    out = np.zeros(shape=(M.shape[0], M.shape[0]))
+    out[:, 0] = M[:, 0]/np.linalg.norm(M[:, 0])
+    out[:, 1] = M[:, 1] - np.dot(out[:, 0], M[:, 1])*out[:, 0]
+    out[:, 1] /= np.linalg.norm(out[:, 1])
+    out[:, 2] = np.cross(out[:, 0], out[:, 1])
+    return out
+'''
+    canonical = np.identity(M.shape[0])
+    for i in range(M.shape[1]):
+        if i == 0:
+            b = M[:, i]/np.linalg.norm(M[:, i])
+        elif i < M.shape[1]-1:
+            s = 0
+            for j in range(i):
+                s += np.dot(out[: ,j], M[:, i]) * out[:, j]
+            b = M[:, i] - s
+        out[:, i] = b
+    # hack for 3d matrices only, since paper isn't clear about the general case
+    assert(out.shape[0] == 3)
+    out[:, -1] = np.cross(out[:, 0], out[:, 1])
+    #out[:, -1] = np.linalg.det(np.hstack([out[:, :-1], canonical]))
+    print('orth_to_mat out: ', out)
+    return out
+'''
 def to_aa(d, mode):
     if mode == "Q":
         return quat_to_aa(d)
@@ -152,8 +207,9 @@ def to_aa(d, mode):
         return mat_to_aa(d)
     elif mode == "E":
         return euler_to_aa(d)
+    elif mode == "O":
+        return orth_to_aa(d)
     return d
-
 
 
 def axisAngleGeodesicLossSingle(aa1, aa2):
@@ -172,6 +228,9 @@ def geodesicLoss(aa1s, aa2s, mode):
     for i in range(aa1s.shape[0]):
         aa1 = to_aa(aa1s[i], mode)
         aa2 = to_aa(aa2s[i], mode)
+        if aa1 == None or aa2 == None:
+            loss += math.pi/2
+            continue
         loss += axisAngleGeodesicLossSingle(aa1, aa2)
     return math.degrees(loss/aa1s.shape[0])
 
